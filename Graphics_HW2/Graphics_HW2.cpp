@@ -3,178 +3,228 @@
 
 #include "stdafx.h"
 #include "Graphics_HW2.h"
+// include the basic windows header files and the Direct3D header file
+#include <windows.h>
+#include <windowsx.h>
+#include <d3d9.h>
 
-#define MAX_LOADSTRING 100
+// define the screen resolution
+#define SCREEN_WIDTH 800
+#define SCREEN_HEIGHT 600
 
-// 전역 변수:
-HINSTANCE hInst;                                // 현재 인스턴스입니다.
-WCHAR szTitle[MAX_LOADSTRING];                  // 제목 표시줄 텍스트입니다.
-WCHAR szWindowClass[MAX_LOADSTRING];            // 기본 창 클래스 이름입니다.
+// include the Direct3D Library file
+#pragma comment (lib, "d3d9.lib")
 
-// 이 코드 모듈에 포함된 함수의 선언을 전달합니다:
-ATOM                MyRegisterClass(HINSTANCE hInstance);
-BOOL                InitInstance(HINSTANCE, int);
-LRESULT CALLBACK    WndProc(HWND, UINT, WPARAM, LPARAM);
-INT_PTR CALLBACK    About(HWND, UINT, WPARAM, LPARAM);
+// global declarations
+LPDIRECT3D9 d3d;    // the pointer to our Direct3D interface
+LPDIRECT3DDEVICE9 d3ddev;    // the pointer to the device class
+LPDIRECT3DVERTEXBUFFER9 v_buffer = NULL;    // the pointer to the vertex buffer
 
-int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
-                     _In_opt_ HINSTANCE hPrevInstance,
-                     _In_ LPWSTR    lpCmdLine,
-                     _In_ int       nCmdShow)
+// function prototypes
+void initD3D(HWND hWnd);    // sets up and initializes Direct3D
+void render_frame(void);    // renders a single frame
+void cleanD3D(void);    // closes Direct3D and releases memory
+void init_graphics(void);    // 3D declarations
+
+struct CUSTOMVERTEX { FLOAT X, Y, Z, RHW; DWORD COLOR; };
+#define CUSTOMFVF (D3DFVF_XYZRHW | D3DFVF_DIFFUSE)
+
+// the WindowProc function prototype
+LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
+
+
+// the entry point for any Windows program
+int WINAPI WinMain(HINSTANCE hInstance,
+	HINSTANCE hPrevInstance,
+	LPSTR lpCmdLine,
+	int nCmdShow)
 {
-    UNREFERENCED_PARAMETER(hPrevInstance);
-    UNREFERENCED_PARAMETER(lpCmdLine);
+	HWND hWnd;
+	WNDCLASSEX wc;
 
-    // TODO: 여기에 코드를 입력합니다.
+	ZeroMemory(&wc, sizeof(WNDCLASSEX));
 
-    // 전역 문자열을 초기화합니다.
-    LoadStringW(hInstance, IDS_APP_TITLE, szTitle, MAX_LOADSTRING);
-    LoadStringW(hInstance, IDC_GRAPHICSHW2, szWindowClass, MAX_LOADSTRING);
-    MyRegisterClass(hInstance);
+	wc.cbSize = sizeof(WNDCLASSEX);
+	wc.style = CS_HREDRAW | CS_VREDRAW;
+	wc.lpfnWndProc = WindowProc;
+	wc.hInstance = hInstance;
+	wc.hCursor = LoadCursor(NULL, IDC_ARROW);
+	wc.lpszClassName = L"WindowClass";
 
-    // 응용 프로그램 초기화를 수행합니다:
-    if (!InitInstance (hInstance, nCmdShow))
-    {
-        return FALSE;
-    }
+	RegisterClassEx(&wc);
 
-    HACCEL hAccelTable = LoadAccelerators(hInstance, MAKEINTRESOURCE(IDC_GRAPHICSHW2));
+	hWnd = CreateWindowEx(NULL,
+		L"WindowClass",
+		L"Our Direct3D Program",
+		WS_OVERLAPPEDWINDOW,
+		0, 0,
+		SCREEN_WIDTH, SCREEN_HEIGHT,
+		NULL,
+		NULL,
+		hInstance,
+		NULL);
 
-    MSG msg;
+	ShowWindow(hWnd, nCmdShow);
 
-    // 기본 메시지 루프입니다:
-    while (GetMessage(&msg, nullptr, 0, 0))
-    {
-        if (!TranslateAccelerator(msg.hwnd, hAccelTable, &msg))
-        {
-            TranslateMessage(&msg);
-            DispatchMessage(&msg);
-        }
-    }
+	// set up and initialize Direct3D
+	initD3D(hWnd);
 
-    return (int) msg.wParam;
+	// enter the main loop:
+
+	MSG msg;
+
+	while (TRUE)
+	{
+		while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE))
+		{
+			TranslateMessage(&msg);
+			DispatchMessage(&msg);
+		}
+
+		if (msg.message == WM_QUIT)
+			break;
+
+		render_frame();
+	}
+
+	// clean up DirectX and COM
+	cleanD3D();
+
+	return msg.wParam;
 }
 
 
-
-//
-//  함수: MyRegisterClass()
-//
-//  용도: 창 클래스를 등록합니다.
-//
-ATOM MyRegisterClass(HINSTANCE hInstance)
+// this is the main message handler for the program
+LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
-    WNDCLASSEXW wcex;
+	switch (message)
+	{
+	case WM_DESTROY:
+	{
+		PostQuitMessage(0);
+		return 0;
+	} break;
+	}
 
-    wcex.cbSize = sizeof(WNDCLASSEX);
-
-    wcex.style          = CS_HREDRAW | CS_VREDRAW;
-    wcex.lpfnWndProc    = WndProc;
-    wcex.cbClsExtra     = 0;
-    wcex.cbWndExtra     = 0;
-    wcex.hInstance      = hInstance;
-    wcex.hIcon          = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_GRAPHICSHW2));
-    wcex.hCursor        = LoadCursor(nullptr, IDC_ARROW);
-    wcex.hbrBackground  = (HBRUSH)(COLOR_WINDOW+1);
-    wcex.lpszMenuName   = MAKEINTRESOURCEW(IDC_GRAPHICSHW2);
-    wcex.lpszClassName  = szWindowClass;
-    wcex.hIconSm        = LoadIcon(wcex.hInstance, MAKEINTRESOURCE(IDI_SMALL));
-
-    return RegisterClassExW(&wcex);
+	return DefWindowProc(hWnd, message, wParam, lParam);
 }
 
-//
-//   함수: InitInstance(HINSTANCE, int)
-//
-//   용도: 인스턴스 핸들을 저장하고 주 창을 만듭니다.
-//
-//   주석:
-//
-//        이 함수를 통해 인스턴스 핸들을 전역 변수에 저장하고
-//        주 프로그램 창을 만든 다음 표시합니다.
-//
-BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
+
+// this function initializes and prepares Direct3D for use
+void initD3D(HWND hWnd)
 {
-   hInst = hInstance; // 인스턴스 핸들을 전역 변수에 저장합니다.
+	d3d = Direct3DCreate9(D3D_SDK_VERSION);
 
-   HWND hWnd = CreateWindowW(szWindowClass, szTitle, WS_OVERLAPPEDWINDOW,
-      CW_USEDEFAULT, 0, CW_USEDEFAULT, 0, nullptr, nullptr, hInstance, nullptr);
+	D3DPRESENT_PARAMETERS d3dpp;
 
-   if (!hWnd)
-   {
-      return FALSE;
-   }
+	ZeroMemory(&d3dpp, sizeof(d3dpp));
+	d3dpp.Windowed = TRUE;
+	d3dpp.SwapEffect = D3DSWAPEFFECT_DISCARD;
+	d3dpp.hDeviceWindow = hWnd;
+	d3dpp.BackBufferFormat = D3DFMT_X8R8G8B8;
+	d3dpp.BackBufferWidth = SCREEN_WIDTH;
+	d3dpp.BackBufferHeight = SCREEN_HEIGHT;
 
-   ShowWindow(hWnd, nCmdShow);
-   UpdateWindow(hWnd);
+	// create a device class using this information and the info from the d3dpp stuct
+	d3d->CreateDevice(D3DADAPTER_DEFAULT,
+		D3DDEVTYPE_HAL,
+		hWnd,
+		D3DCREATE_SOFTWARE_VERTEXPROCESSING,
+		&d3dpp,
+		&d3ddev);
 
-   return TRUE;
+	init_graphics();    // call the function to initialize the triangle
 }
 
-//
-//  함수: WndProc(HWND, UINT, WPARAM, LPARAM)
-//
-//  용도: 주 창의 메시지를 처리합니다.
-//
-//  WM_COMMAND  - 응용 프로그램 메뉴를 처리합니다.
-//  WM_PAINT    - 주 창을 그립니다.
-//  WM_DESTROY  - 종료 메시지를 게시하고 반환합니다.
-//
-//
-LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
+
+// this is the function used to render a single frame
+void render_frame(void)
 {
-    switch (message)
-    {
-    case WM_COMMAND:
-        {
-            int wmId = LOWORD(wParam);
-            // 메뉴 선택을 구문 분석합니다:
-            switch (wmId)
-            {
-            case IDM_ABOUT:
-                DialogBox(hInst, MAKEINTRESOURCE(IDD_ABOUTBOX), hWnd, About);
-                break;
-            case IDM_EXIT:
-                DestroyWindow(hWnd);
-                break;
-            default:
-                return DefWindowProc(hWnd, message, wParam, lParam);
-            }
-        }
-        break;
-    case WM_PAINT:
-        {
-            PAINTSTRUCT ps;
-            HDC hdc = BeginPaint(hWnd, &ps);
-            // TODO: 여기에 hdc를 사용하는 그리기 코드를 추가합니다...
-            EndPaint(hWnd, &ps);
-        }
-        break;
-    case WM_DESTROY:
-        PostQuitMessage(0);
-        break;
-    default:
-        return DefWindowProc(hWnd, message, wParam, lParam);
-    }
-    return 0;
+	d3ddev->Clear(0, NULL, D3DCLEAR_TARGET, D3DCOLOR_XRGB(0, 0, 0), 1.0f, 0);
+
+	d3ddev->BeginScene();
+
+	// select which vertex format we are using
+	d3ddev->SetFVF(CUSTOMFVF);
+
+	// select the vertex buffer to display
+	d3ddev->SetStreamSource(0, v_buffer, 0, sizeof(CUSTOMVERTEX));
+
+	// copy the vertex buffer to the back buffer
+	d3ddev->DrawPrimitive(D3DPT_TRIANGLEFAN, 0, 24);
+
+	d3ddev->EndScene();
+
+	d3ddev->Present(NULL, NULL, NULL, NULL);
 }
 
-// 정보 대화 상자의 메시지 처리기입니다.
-INT_PTR CALLBACK About(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
-{
-    UNREFERENCED_PARAMETER(lParam);
-    switch (message)
-    {
-    case WM_INITDIALOG:
-        return (INT_PTR)TRUE;
 
-    case WM_COMMAND:
-        if (LOWORD(wParam) == IDOK || LOWORD(wParam) == IDCANCEL)
-        {
-            EndDialog(hDlg, LOWORD(wParam));
-            return (INT_PTR)TRUE;
-        }
-        break;
-    }
-    return (INT_PTR)FALSE;
+// this is the function that cleans up Direct3D and COM
+void cleanD3D(void)
+{
+	v_buffer->Release();    // close and release the vertex buffer
+	d3ddev->Release();    // close and release the 3D device
+	d3d->Release();    // close and release Direct3D
+}
+
+
+// this is the function that puts the 3D models into video RAM
+void init_graphics(void)
+{
+	// create the vertices using the CUSTOMVERTEX struct
+	CUSTOMVERTEX vertices[] =
+	{
+		{ 500.0f, 300.0f, 0.5f, 1.0f, D3DCOLOR_XRGB(0, 0, 0), },
+
+		{ 400.0f, 300.0f, 0.5f, 1.0f, D3DCOLOR_XRGB(25, 25, 25), },
+		{ 410.0f, 270.0f, 0.5f, 1.0f, D3DCOLOR_XRGB(75, 75, 75), },
+		{ 420.0f, 250.0f, 0.5f, 1.0f, D3DCOLOR_XRGB(115, 115, 115), },
+		{ 430.0f, 230.0f, 0.5f, 1.0f, D3DCOLOR_XRGB(140, 140, 140), },
+		{ 450.0f, 220.0f, 0.5f, 1.0f, D3DCOLOR_XRGB(180, 180, 180), },
+		{ 470.0f, 210.0f, 0.5f, 1.0f, D3DCOLOR_XRGB(230, 230, 230), },
+
+		{ 500.0f, 200.0f, 0.5f, 1.0f, D3DCOLOR_XRGB(255, 255, 255), },
+
+		{ 530.0f, 210.0f, 0.5f, 1.0f, D3DCOLOR_XRGB(230, 230, 230), },
+		{ 550.0f, 220.0f, 0.5f, 1.0f, D3DCOLOR_XRGB(180, 180, 180), },
+		{ 570.0f, 230.0f, 0.5f, 1.0f, D3DCOLOR_XRGB(140, 140, 140), },
+		{ 580.0f, 250.0f, 0.5f, 1.0f, D3DCOLOR_XRGB(115, 115, 115), },
+		{ 590.0f, 270.0f, 0.5f, 1.0f, D3DCOLOR_XRGB(50, 50, 50), },
+
+		{ 600.0f, 300.0f, 0.5f, 1.0f, D3DCOLOR_XRGB(25, 25, 25), },
+
+		{ 590.0f, 330.0f, 0.5f, 1.0f, D3DCOLOR_XRGB(50, 50, 50), },
+		{ 580.0f, 350.0f, 0.5f, 1.0f, D3DCOLOR_XRGB(115, 115, 115), },
+		{ 570.0f, 370.0f, 0.5f, 1.0f, D3DCOLOR_XRGB(140, 140, 140), },
+		{ 550.0f, 380.0f, 0.5f, 1.0f, D3DCOLOR_XRGB(180, 180, 180), },
+		{ 530.0f, 390.0f, 0.5f, 1.0f, D3DCOLOR_XRGB(230, 230, 230), },
+
+		{ 500.0f, 400.0f, 0.5f, 1.0f, D3DCOLOR_XRGB(255, 255, 255), },
+
+		{ 470.0f, 390.0f, 0.5f, 1.0f, D3DCOLOR_XRGB(230, 230, 230), },
+		{ 450.0f, 380.0f, 0.5f, 1.0f, D3DCOLOR_XRGB(180, 180, 180), },
+		{ 430.0f, 370.0f, 0.5f, 1.0f, D3DCOLOR_XRGB(140, 140, 140), },
+		{ 420.0f, 350.0f, 0.5f, 1.0f, D3DCOLOR_XRGB(115, 115, 115), },
+		{ 410.0f, 330.0f, 0.5f, 1.0f, D3DCOLOR_XRGB(50, 50, 50), },
+
+		{ 400.0f, 300.0f, 0.5f, 1.0f, D3DCOLOR_XRGB(25, 25, 25), },
+		};
+
+	
+
+	// create a vertex buffer interface called v_buffer
+	d3ddev->CreateVertexBuffer(26 * sizeof(CUSTOMVERTEX),
+		0,
+		CUSTOMFVF,
+		D3DPOOL_MANAGED,
+		&v_buffer,
+		NULL);
+
+	VOID* pVoid;    // a void pointer
+
+	// lock v_buffer and load the vertices into it
+	v_buffer->Lock(0, 0, (void**)&pVoid, 0);
+	memcpy(pVoid, vertices, sizeof(vertices));
+
+	v_buffer->Unlock();
 }
